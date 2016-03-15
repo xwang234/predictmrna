@@ -260,6 +260,7 @@ printheatmap=function(cordata,output,qt)
   dev.off()
 }
 qt=c(0,0.01,0.99,1)
+qt=c(0,0.1,0.9,1)
 qth=c(0,0.001,0.01,0.99,0.999,1) #show extreme values
 
 cor_mrna_copynumber1=NA2zero(cor_mrna_copynumber)

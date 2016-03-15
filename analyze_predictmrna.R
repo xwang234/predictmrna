@@ -49,6 +49,84 @@ for (i in 1:11864) mdat[,i] <- mdat[,i]/sqrt(var(mdat[,i]))
 
 
 library(glmnet)
+ x=mdat[!is.na(group),]
+ y=group[!is.na(group)]
+ fit <- glmnet(x,y,family="multinomial")
+ cvfit <- cv.glmnet(x,y,family="multinomial")
+ 
+ fit <- glmnet(x,y)
+ cvfit <- cv.glmnet(x,y,nfolds=length(y))
+ 
+test=coef(cvfit,s=cvfit$lambda.min)
+test1=as.matrix(test[[1]])
+test2=test1[test1[,1]>0,1]
+test1=as.matrix(test[[2]])
+test2=test1[test1[,1]>0,1]
+test1=as.matrix(test[[3]])
+test2=test1[test1[,1]>0,1]
+
+glmnetclassify=function(data,group)
+{
+  #remove rows contain NA
+  tmp=rowSums(data)
+  idx=is.na(tmp)
+  data=data[!idx,]
+  mdat <- t(data)
+  for (i in 1:nrow(data)) mdat[,i] <- as.numeric(mdat[,i])
+  for (i in 1:nrow(data)) mdat[,i] <- mdat[,i]/sqrt(var(mdat[,i]))
+  x=mdat[!is.na(group),]
+  y=group[!is.na(group)]
+  y=as.factor(y)
+  fit <- glmnet(x,y,family="multinomial")
+  cvfit <- cv.glmnet(x,y,family="multinomial",nfolds = length(y))
+  pfit = as.integer(predict(fit,x,s=cvfit$lambda.min,type="class"))
+  res=list(cvfit=cvfit,fit=fit,pfit=pfit,error=sum(pfit!=y)/length(y))
+  return(res)
+}
+data=mrna
+rescmrna=glmnetclassify(data,group)
+predictmrna=predictmrna1se
+data=predictmrna[,1:489]
+rescpredictmrna1se=glmnetclassify(data,group)
+predictmrna=predictmrnamin
+data=predictmrna[,1:489]
+rescpredictmrnamin=glmnetclassify(data,group)
+
+data=t(X) #X from predictmrna.RData
+resX=glmnetclassify(data,group)
+data=rbind(mrna,t(X))
+resmrnaX=glmnetclassify(data,group)
+
+glmnetclassify2=function(data,group)
+{
+  #remove rows contain NA
+  tmp=rowSums(data)
+  idx=is.na(tmp)
+  data=data[!idx,]
+  idx=group==0 #remove group0
+  group[idx]=NA
+  mdat <- t(data)
+  for (i in 1:nrow(data)) mdat[,i] <- as.numeric(mdat[,i])
+  for (i in 1:nrow(data)) mdat[,i] <- mdat[,i]/sqrt(var(mdat[,i]))
+  x=mdat[!is.na(group),]
+  y=group[!is.na(group)]
+  y=as.factor(y)
+  fit <- glmnet(x,y,family="binomial")
+  cvfit <- cv.glmnet(x,y,family="binomial",nfolds = length(y))
+  pfit = as.integer(predict(fit,x,s=cvfit$lambda.min,type="class"))
+  res=list(cvfit=cvfit,fit=fit,pfit=pfit,error=sum(pfit!=y)/length(y))
+  return(res)
+}
+data=mrna
+resc2mrna=glmnetclassify2(data,group)
+predictmrna=predictmrna1se
+data=predictmrna[,1:489]
+resc2predictmrna1se=glmnetclassify2(data,group)
+predictmrna=predictmrnamin
+data=predictmrna[,1:489]
+resc2predictmrnamin=glmnetclassify2(data,group)
+
+
 # x=mdat[!is.na(group),]
 # y=group[!is.na(group)]
 # #fit <- glmnet(mdat[!is.na(group),],group[!is.na(group)])
@@ -126,7 +204,7 @@ formcv=function(predictmrna)
   pfit1se=pfitmin=rep(NA,length(y))
   pfitmin = predict(fit1,mdat1[!is.na(group),],s=cvfit1$lambda.min,type="response")
   pfit1se = predict(fit1,mdat1[!is.na(group),],s=cvfit1$lambda.1se,type="response")
-  result=list(cv=cvfit1,sel_setmin=sel_setmin,sel_set1se=sel_set1se,pfitmin=pfitmin,pfit1se=pfit1se)
+  result=list(cv=cvfit1,fit=fit1,sel_setmin=sel_setmin,sel_set1se=sel_set1se,pfitmin=pfitmin,pfit1se=pfit1se)
 }
 
 plotroc=function(pfit)
@@ -174,8 +252,10 @@ for (i in 1:30)
   predictmrna1se=rbind(predictmrna1se,tmp)
 }
 
-predictmrnamin=read.table(file="./predictmrna/predictedmrnamin_all1.txt",header=T,sep="\t")
-predictmrna1se=read.table(file="./predictmrna/predictedmrna1se_all1.txt",header=T,sep="\t")
+predictmrnamin=read.table(file="./predictmrna/predictedmrnamin_all2.txt",header=T,sep="\t")
+predictmrna1se=read.table(file="./predictmrna/predictedmrna1se_all2.txt",header=T,sep="\t")
+predictmrnamin=read.table(file="./predictmrna/predictedmrnamin_all4.txt",header=T,sep="\t")
+predictmrna1se=read.table(file="./predictmrna/predictedmrna1se_all4.txt",header=T,sep="\t")
 
 predictmrnamin[,col_variable]=as.character(predictmrnamin[,col_variable])
 predictmrna1se[,col_variable]=as.character(predictmrna1se[,col_variable])
@@ -185,6 +265,14 @@ hist(predictmrna1se$numvariables)
 
 hist(predictmrnamin$rsquared)
 hist(predictmrna1se$rsquared)
+
+respredictmrnamin=formcv(predictmrnamin)
+plotroc(respredictmrnamin$pfitmin)
+plotroc(respredictmrnamin$pfit1se)
+
+respredictmrna1se=formcv(predictmrna1se)
+plotroc(respredictmrna1se$pfitmin)
+plotroc(respredictmrna1se$pfit1se)
 
 #combine 1se and min results
 predictmrna=predictmrna1se
@@ -224,17 +312,16 @@ sum(test)
 #[1] 9
 
 features=colnames(X)
-numtypes=c(10391,9329,5876)
+
 countseltypes=function(features,predictmrna)
 {
   col_variable=492
-  res=data.frame(matrix(NA,ncol=3,nrow=nrow(predictmrna)))
-  colnames(res)=c("CP","ME","MU")
+  numtypes=c(10391,9329,5876)
   res=apply(predictmrna,1,function(x1) {
     result=rep(0,3)
-    if (!is.na(x1[col_variable]))
+    if (!is.na(x1[[col_variable]]))
     {
-      tmp=as.numeric(unlist(strsplit(as.character(x1[col_variable]),",")))
+      tmp=as.numeric(unlist(strsplit(as.character(x1[[col_variable]]),",")))
       tmp1=sum(tmp<=numtypes[1])
       tmp2=sum(numtypes[1]<tmp & tmp<=numtypes[1]+numtypes[2])
       tmp3=sum(tmp>numtypes[1]+numtypes[2])
@@ -244,7 +331,38 @@ countseltypes=function(features,predictmrna)
     }
     return(result)
   })
+  res=data.frame(t(res))
+  colnames(res)=c("CP","ME","MU")
+  rownames(res)=rownames(predictmrna)
+  return(res)
 }
+
+predictmrna=predictmrna1se
+predictmrna=predictmrnamin
+predictmrna=predictmrna[predictmrna$cvwork==1,]
+count1se=countseltypes(features,predictmrna)
+hist(count1se[,1],main="Copy number")
+hist(count1se[,2],main="Methylation")
+hist(count1se[,3],main="Mutation")
+hist(rowSums(count1se),main="ALL")
+count1se_all=rowSums(count1se)
+sum(count1se_all==1)
+sum(predictmrna$rsquared<0.1,na.rm=T)
+
+cp_prop=apply(count1se,1,function(x){x[1]/sum(x)})
+me_prop=apply(count1se,1,function(x){x[2]/sum(x)})
+mu_prop=apply(count1se,1,function(x){x[3]/sum(x)})
+hist(cp_prop,main="Copy number")
+hist(me_prop,main="Methylation")
+hist(mu_prop,main="Mutation")
+data=data.frame(matrix(NA,nrow=3,ncol=nrow(cor_mrna_copynumber)))
+colnames(data)=rownames(cor_mrna_copynumber)
+data[1,]=cp_prop
+data[2,]=me_prop
+data[3,]=mu_prop
+colors=c("red","blue","green")
+barplot(as.matrix(data[,1:100]), main="", ylab = "Proportion", cex.lab = 1, cex.main = 1, beside=TRUE, col=colors)
+legend("topleft", c("CP","ME","MU"), cex=1.3, bty="n", fill=colors)
 
 
 
