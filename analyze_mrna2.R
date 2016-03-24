@@ -6,6 +6,7 @@ orderdatabygenelocation=function(data)
   genes=rownames(data)
   #Knowngenes with gene symbols downloaded from https://genome.ucsc.edu/cgi-bin/hgTables
   allgenes=read.table(file="/fh/fast/dai_j/CancerGenomics/Tools/database/other/knownGene1.txt",sep="\t")
+  allgenes=read.table(file="/fh/fast/dai_j/CancerGenomics/Tools/database/other/knownGenehg18.txt",sep="\t")
   allgenes=allgenes[,c(1,2,4,14)]
   colnames(allgenes)=c("kgid","chr","start","symbol")
   allgenes$chr=as.character(allgenes$chr)
@@ -42,7 +43,8 @@ orderdatabygenelocation=function(data)
   ordID=unique(tmp[,"ID"]) #Use ID in genes1
   genes2=genes[!idx] #1233 genes were not ordered, add to the list
   data2=data[genes2,]
-  res=rbind(data1[ordID,],data2)
+  #res=rbind(data1[ordID,],data2)
+  res=data1[ordID,]
 }
 
 #get the chromosome of genes
@@ -108,6 +110,11 @@ NA2zero=function(data)
 #draw the correlation of mrna and methylation
 load("/fh/fast/dai_j/CancerGenomics/Ovarian/mrna_copynumber_methylation_mutation.RData")
 mrna=orderdatabygenelocation(mrna)
+predictmrna=read.table(file="/fh/fast/dai_j/CancerGenomics/Ovarian/predictmrna/predictedmrnamin_all3.txt",header=TRUE,sep="\t")
+#the methylation2 data which consider correlation with mrna
+predictmrna=read.table(file="/fh/fast/dai_j/CancerGenomics/Ovarian/predictmrna/predictedmrnamin_all6.txt",header=TRUE,sep="\t")
+predictmrna=predictmrna[,1:489]
+predictmrna=orderdatabygenelocation(predictmrna)
 methylation=orderdatabygenelocation(methylation)
 methylation=fillNAs(methylation)
 methylation1=orderdatabygenelocation(methylation1)
@@ -122,6 +129,27 @@ corxy=function(x,y)
   y=as.numeric(y)
   res=format(cor(x,y),digits=2)
 }
+
+#add pvalue
+corxy1=function(x,y)
+{
+  x=as.numeric(x)
+  y=as.numeric(y)
+  if (sum(is.na(x))>length(x)-3 | sum(is.na(y))>length(y)-3) #too many NAs
+  {
+    corr=0
+    pvalue=1
+  }
+  else
+  {
+    tmp=cor.test(x,y,method="spearman")
+    corr=format(as.numeric(tmp$estimate),digits=3)
+    corr=as.numeric(corr)
+    pvalue=as.numeric(tmp$p.value)
+  }
+  res=list(corr=corr,pvalue=pvalue)
+}
+
 plinecor=function(x,Y)
 {
   x=as.numeric(x)
@@ -129,6 +157,17 @@ plinecor=function(x,Y)
   res=rep(NA,nrow(Y))
   res=apply(Y,1,corxy,y=x)
 }
+
+#add pvalue
+plinecor1=function(x,Y)
+{
+  x=as.numeric(x)
+  Y=as.matrix(Y)
+  tmp=apply(Y,1,corxy1,y=x)
+  #first column corr,second column pvalue
+  res=matrix(unlist(tmp),ncol=2,byrow=TRUE)
+}
+
 
 #salloc -t 1-1 -n 100 mpirun -n 1 R --interactive
 njob=100
@@ -148,12 +187,16 @@ mpi.spawn.Rslaves(needlog = FALSE)
 }
 }
 mpi.bcast.Robj2slave(mrna)
+mpi.bcast.Robj2slave(predictmrna)
 mpi.bcast.Robj2slave(methylation)
 mpi.bcast.Robj2slave(methylation1)
 mpi.bcast.Robj2slave(mutation)
 mpi.bcast.Robj2slave(copynumber)
 mpi.bcast.Robj2slave(corxy)
 mpi.bcast.Robj2slave(plinecor)
+mpi.bcast.Robj2slave(corxy1)
+mpi.bcast.Robj2slave(plinecor1)
+
 
 #cor(data1,data2)
 cormatrix=function(data1,data2,output)
@@ -172,6 +215,44 @@ cormatrix=function(data1,data2,output)
   }
   return(res1)
 }
+
+#add p value
+cormatrix1=function(data1,data2,output1,output2)
+{
+  colnum=nrow(data2)
+  res1 <- NULL
+  res2 <- NULL
+  nrun <- ceiling(nrow(data1)/1000)
+  for (j in 1:nrun){
+    cat(j,"..")
+    if (j < nrun) cseq <- ((j-1)*1000+1):(j*1000)  else  cseq <- ((j-1)*1000+1):nrow(data1)
+    res=mpi.parRapply(X=data1[cseq,],FUN=plinecor1,Y=data2,job.num=njob)
+    rownum=length(res)/colnum/2
+    idx=rep(c(rep(TRUE,colnum),rep(FALSE,colnum)),rownum)
+    corr=res[idx]
+    pvalue=res[!idx]
+    res1=rbind(res1,matrix(corr,ncol=colnum,byrow=TRUE))
+    res2=rbind(res2,matrix(pvalue,ncol=colnum,byrow=TRUE))
+    rownames(res1)[cseq]=rownames(res2)[cseq]=rownames(data1)[cseq]  
+    colnames(res1)=colnames(res2)=rownames(data2)
+        
+    write.table(res1,file=output1,col.names=T,row.names=T,sep="\t",quote=F)
+    write.table(res2,file=output2,col.names=T,row.names=T,sep="\t",quote=F)
+  }
+  return(res1)
+}
+
+numNA=apply(predictmrna,1,function(x) {
+  sum(is.na(x))
+})
+sum(numNA>486)
+
+data1=mrna
+data2=predictmrna
+output1="corr_mrna_predictmrna1.corr.txt"
+output2="corr_mrna_predictmrna1.pvalue.txt"
+res=cormatrix1(data1,data2,output1,output2)
+
 
 data1=mrna
 data2=copynumber
@@ -202,6 +283,36 @@ cor_mrna_copynumber=read.table(file="corr_mrna_copynumber.txt",header=T,sep="\t"
 cor_mrna_methylation=read.table(file="corr_mrna_methylation.txt",header=T,sep="\t")
 cor_mrna_methylationn=read.table(file="corr_mrna_methylation1.txt",header=T,sep="\t")
 cor_mrna_mutation=read.table(file="corr_mrna_mutation.txt",header=T,sep="\t")
+cor_mrna_predictmrna=read.table(file="corr_mrna_predictmrna1.corr.txt",header=T,sep="\t")
+cor_mrna_predictmrna.pvalue=read.table(file="corr_mrna_predictmrna1.pvalue.txt",header=T,sep="\t")
+
+adjustpmatrix=function(corpmatrix)
+{
+  res=data.frame(matrix(NA,ncol=ncol(corpmatrix),nrow=nrow(corpmatrix)))
+  #unlist decompose column first to make a vector, so transpose the matrix...
+  tmp=t(corrpmatrix)
+  tmp=unlist(tmp)
+  pvalue=p.adjust(tmp,method="fdr")
+  res=data.frame(matrix(pvalue,ncol=ncol(corrpmatrix),byrow=TRUE))
+  colnames(res)=colnames(corrpmatrix)
+  rownames(res)=rownames(corrpmatrix)
+  return(res)
+}
+
+adjustcorrusingadustpvalue=function(cordata,qdata)
+{
+  qthresh=0.05
+  tmp=apply(qdata,1,function(x){
+    idx=rep(1,length(x))
+    idx1=x>qthresh
+    idx[idx1]=0
+    return(idx)
+  })
+  tmp=t(tmp)
+  res=cordata*tmp
+  return(res)
+  
+}
 
 if (!require("gplots")) {
   install.packages("gplots", dependencies = TRUE)
@@ -225,7 +336,6 @@ printheatmap=function(cordata,output,qt)
     allcolors=c(rep(colors[1],3),rep(colors[2],6),rep(colors[3],3))
   }
   my_palette <- colorRampPalette(formcolors(c("green","white","red")))(n = 299)
-  #my_palette <- colorRampPalette(c("green","yellow","white","pink","red"))(n = 299)
   #qt=c(0,0.01,0.99,1)
   #qt=c(0,0.0001,0.01,0.99,0.9999,1) #show extreme values
   tmp=as.matrix(quantile(cordata,qt,na.rm=T))
@@ -266,18 +376,18 @@ printheatmap=function(cordata,output,qt)
 }
 qt=c(0,0.01,0.99,1)
 qt=c(0,0.1,0.9,1)
-qth=c(0,0.001,0.01,0.99,0.999,1) #show extreme values
+qth=c(0,0.001,0.01,0.99,0.999,1) #show extreme values, could use for lasso cases
 
 cor_mrna_copynumber1=NA2zero(cor_mrna_copynumber)
 cordata=cor_mrna_copynumber1
-output="cor_mrna_copynumber1.png"
+output="cor_mrna_copynumber.png"
 printheatmap(cordata,output,qt)
 #output="cor_mrna_copynumberh.png"
 #printheatmap(cordata,output,qth)
 
 cor_mrna_methylation1=NA2zero(cor_mrna_methylation)
 cordata=cor_mrna_methylation1
-output="cor_mrna_methylation1.png"
+output="cor_mrna_methylation.png"
 printheatmap(cordata,output,qt)
 #output="cor_mrna_methylationh.png"
 #printheatmap(cordata,output,qth)
@@ -295,6 +405,16 @@ output="cor_mrna_mutation.png"
 printheatmap(cordata,output,qt)
 #output="cor_mrna_mutationh.png"
 #printheatmap(cordata,output,qth)
+
+cor_mrna_predictmrna=NA2zero(cor_mrna_predictmrna)
+cordata=cor_mrna_predictmrna
+output="cor_mrna_predictmrna.png"
+printheatmap(cordata,output,qt)
+#considering q-values
+qdata=adjustpmatrix(cor_mrna_predictmrna.pvalue)
+adjcordata=adjustcorrusingadustpvalue(cordata,qdata)
+output="cor_mrna_predictmrna_adjp.png"
+printheatmap(cordata=adjcordata,output,qt)
 
 
 #cross anaylize predictmrna and correlation result
@@ -478,7 +598,7 @@ mpi.quit()
 
 cor_mrna_copynumber_lasso=read.table(file="corr_mrna_copynumber_lasso1se.txt",header=T,sep="\t")
 cor_mrna_methylation_lasso=read.table(file="corr_mrna_methylation_lasso1se.txt",header=T,sep="\t")
-cor_mrna_methylationn_lasso=read.table(file="corr_mrna_methylation1_lasso1se.txt",header=T,sep="\t")
+cor_mrna_methylationn_lasso=read.table(file="corr_mrna_methylation1.txt",header=T,sep="\t")
 cor_mrna_mutation_lasso=read.table(file="corr_mrna_mutation_lasso1se.txt",header=T,sep="\t")
 
 cor_mrna_copynumber_lasso1=NA2zero(cor_mrna_copynumber_lasso)

@@ -6,6 +6,7 @@ orderdatabygenelocation=function(data)
   genes=rownames(data)
   #Knowngenes with gene symbols downloaded from https://genome.ucsc.edu/cgi-bin/hgTables
   allgenes=read.table(file="/fh/fast/dai_j/CancerGenomics/Tools/database/other/knownGene1.txt",sep="\t")
+  allgenes=read.table(file="/fh/fast/dai_j/CancerGenomics/Tools/database/other/knownGenehg18.txt",sep="\t")
   allgenes=allgenes[,c(1,2,4,14)]
   colnames(allgenes)=c("kgid","chr","start","symbol")
   allgenes$chr=as.character(allgenes$chr)
@@ -225,7 +226,6 @@ printheatmap=function(cordata,output,qt)
     allcolors=c(rep(colors[1],3),rep(colors[2],6),rep(colors[3],3))
   }
   my_palette <- colorRampPalette(formcolors(c("green","white","red")))(n = 299)
-  #my_palette <- colorRampPalette(c("green","yellow","white","pink","red"))(n = 299)
   #qt=c(0,0.01,0.99,1)
   #qt=c(0,0.0001,0.01,0.99,0.9999,1) #show extreme values
   tmp=as.matrix(quantile(cordata,qt,na.rm=T))
@@ -266,18 +266,18 @@ printheatmap=function(cordata,output,qt)
 }
 qt=c(0,0.01,0.99,1)
 qt=c(0,0.1,0.9,1)
-qth=c(0,0.001,0.01,0.99,0.999,1) #show extreme values
+qth=c(0,0.001,0.01,0.99,0.999,1) #show extreme values, could use for lasso cases
 
 cor_mrna_copynumber1=NA2zero(cor_mrna_copynumber)
 cordata=cor_mrna_copynumber1
-output="cor_mrna_copynumber1.png"
+output="cor_mrna_copynumber.png"
 printheatmap(cordata,output,qt)
 #output="cor_mrna_copynumberh.png"
 #printheatmap(cordata,output,qth)
 
 cor_mrna_methylation1=NA2zero(cor_mrna_methylation)
 cordata=cor_mrna_methylation1
-output="cor_mrna_methylation1.png"
+output="cor_mrna_methylation.png"
 printheatmap(cordata,output,qt)
 #output="cor_mrna_methylationh.png"
 #printheatmap(cordata,output,qth)
@@ -478,7 +478,7 @@ mpi.quit()
 
 cor_mrna_copynumber_lasso=read.table(file="corr_mrna_copynumber_lasso1se.txt",header=T,sep="\t")
 cor_mrna_methylation_lasso=read.table(file="corr_mrna_methylation_lasso1se.txt",header=T,sep="\t")
-cor_mrna_methylationn_lasso=read.table(file="corr_mrna_methylation1_lasso1se.txt",header=T,sep="\t")
+cor_mrna_methylationn_lasso=read.table(file="corr_mrna_methylation1.txt",header=T,sep="\t")
 cor_mrna_mutation_lasso=read.table(file="corr_mrna_mutation_lasso1se.txt",header=T,sep="\t")
 
 cor_mrna_copynumber_lasso1=NA2zero(cor_mrna_copynumber_lasso)
